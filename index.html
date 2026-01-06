@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini API 餘額狀態</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        .status-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px 20px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .status-item span {
+            color: #00d4ff;
+            font-weight: bold;
+        }
+        
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .live-dot {
+            width: 10px;
+            height: 10px;
+            background: #00ff88;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+        
+        .screenshot-container {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        
+        .screenshot-wrapper {
+            position: relative;
+            overflow: hidden;
+            border-radius: 10px;
+            background: #000;
+        }
+        
+        #screenshot {
+            width: 100%;
+            height: auto;
+            display: block;
+            transition: opacity 0.3s ease;
+        }
+        
+        #screenshot.loading {
+            opacity: 0.5;
+        }
+        
+        .loading-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: none;
+        }
+        
+        .loading-overlay.show {
+            display: block;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #00d4ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .info-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+        }
+        
+        .info-section h2 {
+            color: #00d4ff;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+        }
+        
+        .info-section ul {
+            list-style: none;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .info-section li {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .info-section li:last-child {
+            border-bottom: none;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.9rem;
+        }
+        
+        .refresh-btn {
+            background: linear-gradient(90deg, #00d4ff, #7b2cbf);
+            border: none;
+            padding: 10px 25px;
+            border-radius: 25px;
+            color: #fff;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        .refresh-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 212, 255, 0.4);
+        }
+        
+        .refresh-btn:active {
+            transform: translateY(0);
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 1.5rem; }
+            .status-bar { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔷 Gemini API 帳戶餘額狀態</h1>
+            <p style="color: rgba(255,255,255,0.7); margin-top: 10px;">
+                Google Cloud Billing 即時監控
+            </p>
+        </header>
+        
+        <div class="status-bar">
+            <div class="status-item live-indicator">
+                <div class="live-dot"></div>
+                <span>自動更新中</span>
+            </div>
+            <div class="status-item">
+                最後更新：<span id="lastUpdate">載入中...</span>
+            </div>
+            <div class="status-item">
+                下次更新：<span id="nextUpdate">--</span>
+            </div>
+            <button class="refresh-btn" onclick="refreshScreenshot()">🔄 立即刷新</button>
+        </div>
+        
+        <div class="screenshot-container">
+            <div class="screenshot-wrapper">
+                <img id="screenshot" src="screenshot.png" alt="Google Cloud Billing Screenshot" onerror="handleImageError()">
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="info-section">
+            <h2>📋 說明</h2>
+            <ul>
+                <li>✅ 此頁面每 <strong>15 分鐘</strong> 自動更新一次截圖</li>
+                <li>✅ 顯示的是 Google Cloud Billing 帳戶的即時餘額狀態</li>
+                <li>✅ 頁面會每 30 秒自動檢查是否有新截圖</li>
+                <li>⚠️ 如果圖片無法載入，請稍後再試</li>
+            </ul>
+        </div>
+        
+        <footer>
+            <p>Powered by GitHub Pages | 自動化截圖系統</p>
+        </footer>
+    </div>
+
+    <script>
+        // 設定
+        const GITHUB_USERNAME = 'meichenh84';  // 請修改
+        const GITHUB_REPO = 'gemini-balance';
+        const CHECK_INTERVAL = 30000; // 30 秒檢查一次
+        const UPDATE_INTERVAL = 15; // 分鐘
+        
+        let lastModified = null;
+        let countdown = UPDATE_INTERVAL * 60;
+        
+        // 載入最後更新時間
+        async function loadLastUpdate() {
+            try {
+                const response = await fetch(`last_update.txt?t=${Date.now()}`);
+                if (response.ok) {
+                    const text = await response.text();
+                    document.getElementById('lastUpdate').textContent = text;
+                }
+            } catch (e) {
+                console.log('無法載入更新時間');
+            }
+        }
+        
+        // 刷新截圖
+        function refreshScreenshot() {
+            const img = document.getElementById('screenshot');
+            const overlay = document.getElementById('loadingOverlay');
+            
+            img.classList.add('loading');
+            overlay.classList.add('show');
+            
+            // 加入時間戳避免快取
+            img.src = `screenshot.png?t=${Date.now()}`;
+            
+            img.onload = function() {
+                img.classList.remove('loading');
+                overlay.classList.remove('show');
+                loadLastUpdate();
+            };
+        }
+        
+        // 處理圖片載入錯誤
+        function handleImageError() {
+            const img = document.getElementById('screenshot');
+            img.alt = '截圖載入失敗，請稍後再試';
+            document.getElementById('loadingOverlay').classList.remove('show');
+        }
+        
+        // 更新倒數計時
+        function updateCountdown() {
+            countdown--;
+            if (countdown <= 0) {
+                countdown = UPDATE_INTERVAL * 60;
+                refreshScreenshot();
+            }
+            
+            const minutes = Math.floor(countdown / 60);
+            const seconds = countdown % 60;
+            document.getElementById('nextUpdate').textContent = 
+                `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadLastUpdate();
+            
+            // 每秒更新倒數
+            setInterval(updateCountdown, 1000);
+            
+            // 每 30 秒檢查新截圖
+            setInterval(refreshScreenshot, CHECK_INTERVAL);
+        });
+    </script>
+</body>
+</html>
