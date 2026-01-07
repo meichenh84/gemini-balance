@@ -199,6 +199,16 @@
         .error-message.show {
             display: block;
         }
+        
+        .debug-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 5px;
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.5);
+            display: none;
+        }
 
         @media (max-width: 768px) {
             h1 { font-size: 1.5rem; }
@@ -226,23 +236,24 @@
             <div class="status-item">
                 下次檢查：<span id="nextCheck">--</span>
             </div>
-            <button class="refresh-btn" id="refreshBtn" onclick="refreshScreenshot()">🔄 立即刷新</button>
+            <button class="refresh-btn" id="refreshBtn">🔄 立即刷新</button>
         </div>
         
         <div class="screenshot-container">
             <div class="screenshot-wrapper">
-                <img id="screenshot" src="screenshot.png" alt="Google Cloud Billing Screenshot">
+                <img id="screenshot" src="" alt="Google Cloud Billing Screenshot">
                 <div class="loading-overlay" id="loadingOverlay">
                     <div class="spinner"></div>
                 </div>
                 <p class="error-message" id="errorMessage">⚠️ 截圖載入失敗，請稍後再試</p>
             </div>
+            <div class="debug-info" id="debugInfo"></div>
         </div>
         
         <div class="info-section">
             <h2>📋 說明</h2>
             <ul>
-                <li>✅ 電腦端每 <strong>1 小時</strong> 自動上傳新截圖</li>
+                <li>✅ 電腦端每 <strong>3 小時</strong> 自動上傳新截圖</li>
                 <li>✅ 此頁面每 <strong>30 秒</strong> 自動檢查是否有新截圖</li>
                 <li>✅ 顯示的是 Google Cloud Billing 帳戶的即時餘額狀態</li>
                 <li>⚠️ 如果圖片無法載入，請稍後再試</li>
@@ -255,18 +266,39 @@
     </div>
 
     <script>
-        // 設定
+        // ============== 設定 ==============
+        const GITHUB_USERNAME = 'meichenh84';
+        const GITHUB_REPO = 'gemini-balance';
+        const BRANCH = 'main';
         const CHECK_INTERVAL = 30; // 30 秒檢查一次
+        // ==================================
+        
+        // 使用 GitHub Raw URL（繞過 GitHub Pages 快取）
+        const RAW_BASE_URL = `https://raw.githubusercontent.com/${GITHUB_USERNAME}/${GITHUB_REPO}/${BRANCH}`;
+        const SCREENSHOT_URL = `${RAW_BASE_URL}/screenshot.png`;
+        const TIMESTAMP_URL = `${RAW_BASE_URL}/last_update.txt`;
         
         let countdown = CHECK_INTERVAL;
+        let isRefreshing = false;
+        
+        // 取得元素
+        const img = document.getElementById('screenshot');
+        const overlay = document.getElementById('loadingOverlay');
+        const errorMsg = document.getElementById('errorMessage');
+        const btn = document.getElementById('refreshBtn');
+        const lastUpdateEl = document.getElementById('lastUpdate');
+        const nextCheckEl = document.getElementById('nextCheck');
+        const debugInfo = document.getElementById('debugInfo');
         
         // 載入最後更新時間
         async function loadLastUpdate() {
             try {
-                const response = await fetch(`last_update.txt?t=${Date.now()}`);
+                const response = await fetch(`${TIMESTAMP_URL}?t=${Date.now()}`, {
+                    cache: 'no-store'
+                });
                 if (response.ok) {
                     const text = await response.text();
-                    document.getElementById('lastUpdate').textContent = text.trim();
+                    lastUpdateEl.textContent = text.trim();
                 }
             } catch (e) {
                 console.log('無法載入更新時間:', e);
@@ -274,69 +306,98 @@
         }
         
         // 刷新截圖
-        function refreshScreenshot() {
-            const img = document.getElementById('screenshot');
-            const overlay = document.getElementById('loadingOverlay');
-            const errorMsg = document.getElementById('errorMessage');
-            const btn = document.getElementById('refreshBtn');
+        async function refreshScreenshot() {
+            if (isRefreshing) return;
+            isRefreshing = true;
             
-            // 禁用按鈕防止重複點擊
+            console.log('開始刷新截圖...');
+            
+            // 禁用按鈕
             btn.disabled = true;
             btn.textContent = '⏳ 載入中...';
             
-            // 顯示 loading 狀態
+            // 顯示 loading
             img.classList.add('loading');
             overlay.classList.add('show');
             errorMsg.classList.remove('show');
             
-            // 建立新圖片物件來載入
+            // 產生唯一時間戳
+            const timestamp = Date.now();
+            const imageUrl = `${SCREENSHOT_URL}?t=${timestamp}`;
+            
+            console.log('圖片 URL:', imageUrl);
+            
+            // 建立新圖片
             const newImg = new Image();
             
+            // 設定超時
+            const timeout = setTimeout(() => {
+                console.log('載入超時');
+                handleError();
+            }, 15000);
+            
             newImg.onload = function() {
-                // 載入成功
-                img.src = newImg.src;
+                clearTimeout(timeout);
+                console.log('圖片載入成功');
+                
+                img.src = imageUrl;
                 img.classList.remove('loading');
                 overlay.classList.remove('show');
                 errorMsg.classList.remove('show');
-                btn.disabled = false;
-                btn.textContent = '🔄 立即刷新';
+                
                 loadLastUpdate();
-                countdown = CHECK_INTERVAL; // 重置倒數
-                console.log('截圖刷新成功');
+                resetButton();
+                countdown = CHECK_INTERVAL;
+                isRefreshing = false;
             };
             
             newImg.onerror = function() {
-                // 載入失敗
-                img.classList.remove('loading');
-                overlay.classList.remove('show');
-                errorMsg.classList.add('show');
-                btn.disabled = false;
-                btn.textContent = '🔄 立即刷新';
-                countdown = CHECK_INTERVAL; // 重置倒數
-                console.log('截圖載入失敗');
+                clearTimeout(timeout);
+                console.log('圖片載入失敗');
+                handleError();
             };
             
-            // 加入時間戳避免快取
-            newImg.src = `screenshot.png?t=${Date.now()}`;
+            newImg.src = imageUrl;
         }
         
-        // 更新倒數計時
+        function handleError() {
+            img.classList.remove('loading');
+            overlay.classList.remove('show');
+            errorMsg.classList.add('show');
+            resetButton();
+            countdown = CHECK_INTERVAL;
+            isRefreshing = false;
+        }
+        
+        function resetButton() {
+            btn.disabled = false;
+            btn.textContent = '🔄 立即刷新';
+        }
+        
+        // 更新倒數
         function updateCountdown() {
             countdown--;
             if (countdown <= 0) {
                 countdown = CHECK_INTERVAL;
                 refreshScreenshot();
             }
-            
-            document.getElementById('nextCheck').textContent = `${countdown} 秒`;
+            nextCheckEl.textContent = `${countdown} 秒`;
         }
+        
+        // 綁定按鈕事件
+        btn.addEventListener('click', function() {
+            console.log('按鈕被點擊');
+            countdown = CHECK_INTERVAL;
+            refreshScreenshot();
+        });
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('頁面初始化...');
-            loadLastUpdate();
+            console.log('頁面初始化');
+            console.log('GitHub Raw URL:', SCREENSHOT_URL);
             
-            // 初始載入截圖
+            // 初始載入
+            loadLastUpdate();
             refreshScreenshot();
             
             // 每秒更新倒數
