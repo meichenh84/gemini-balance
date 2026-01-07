@@ -90,6 +90,7 @@
             overflow: hidden;
             border-radius: 10px;
             background: #000;
+            min-height: 200px;
         }
         
         #screenshot {
@@ -181,6 +182,23 @@
         .refresh-btn:active {
             transform: translateY(0);
         }
+        
+        .refresh-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .error-message {
+            color: #ff6b6b;
+            text-align: center;
+            padding: 20px;
+            display: none;
+        }
+        
+        .error-message.show {
+            display: block;
+        }
 
         @media (max-width: 768px) {
             h1 { font-size: 1.5rem; }
@@ -191,7 +209,7 @@
 <body>
     <div class="container">
         <header>
-            <h1>🔷 Gemini API 帳戶餘額狀態</h1>
+            <h1>📷 Gemini API 帳戶餘額狀態</h1>
             <p style="color: rgba(255,255,255,0.7); margin-top: 10px;">
                 Google Cloud Billing 即時監控
             </p>
@@ -206,26 +224,27 @@
                 最後更新：<span id="lastUpdate">載入中...</span>
             </div>
             <div class="status-item">
-                下次更新：<span id="nextUpdate">--</span>
+                下次檢查：<span id="nextCheck">--</span>
             </div>
-            <button class="refresh-btn" onclick="refreshScreenshot()">🔄 立即刷新</button>
+            <button class="refresh-btn" id="refreshBtn" onclick="refreshScreenshot()">🔄 立即刷新</button>
         </div>
         
         <div class="screenshot-container">
             <div class="screenshot-wrapper">
-                <img id="screenshot" src="screenshot.png" alt="Google Cloud Billing Screenshot" onerror="handleImageError()">
+                <img id="screenshot" src="screenshot.png" alt="Google Cloud Billing Screenshot">
                 <div class="loading-overlay" id="loadingOverlay">
                     <div class="spinner"></div>
                 </div>
+                <p class="error-message" id="errorMessage">⚠️ 截圖載入失敗，請稍後再試</p>
             </div>
         </div>
         
         <div class="info-section">
             <h2>📋 說明</h2>
             <ul>
-                <li>✅ 此頁面每 <strong>15 分鐘</strong> 自動更新一次截圖</li>
+                <li>✅ 電腦端每 <strong>1 小時</strong> 自動上傳新截圖</li>
+                <li>✅ 此頁面每 <strong>30 秒</strong> 自動檢查是否有新截圖</li>
                 <li>✅ 顯示的是 Google Cloud Billing 帳戶的即時餘額狀態</li>
-                <li>✅ 頁面會每 30 秒自動檢查是否有新截圖</li>
                 <li>⚠️ 如果圖片無法載入，請稍後再試</li>
             </ul>
         </div>
@@ -237,13 +256,9 @@
 
     <script>
         // 設定
-        const GITHUB_USERNAME = 'meichenh84';  // 請修改
-        const GITHUB_REPO = 'gemini-balance';
-        const CHECK_INTERVAL = 30000; // 30 秒檢查一次
-        const UPDATE_INTERVAL = 15; // 分鐘
+        const CHECK_INTERVAL = 30; // 30 秒檢查一次
         
-        let lastModified = null;
-        let countdown = UPDATE_INTERVAL * 60;
+        let countdown = CHECK_INTERVAL;
         
         // 載入最後更新時間
         async function loadLastUpdate() {
@@ -251,10 +266,10 @@
                 const response = await fetch(`last_update.txt?t=${Date.now()}`);
                 if (response.ok) {
                     const text = await response.text();
-                    document.getElementById('lastUpdate').textContent = text;
+                    document.getElementById('lastUpdate').textContent = text.trim();
                 }
             } catch (e) {
-                console.log('無法載入更新時間');
+                console.log('無法載入更新時間:', e);
             }
         }
         
@@ -262,50 +277,70 @@
         function refreshScreenshot() {
             const img = document.getElementById('screenshot');
             const overlay = document.getElementById('loadingOverlay');
+            const errorMsg = document.getElementById('errorMessage');
+            const btn = document.getElementById('refreshBtn');
             
+            // 禁用按鈕防止重複點擊
+            btn.disabled = true;
+            btn.textContent = '⏳ 載入中...';
+            
+            // 顯示 loading 狀態
             img.classList.add('loading');
             overlay.classList.add('show');
+            errorMsg.classList.remove('show');
             
-            // 加入時間戳避免快取
-            img.src = `screenshot.png?t=${Date.now()}`;
+            // 建立新圖片物件來載入
+            const newImg = new Image();
             
-            img.onload = function() {
+            newImg.onload = function() {
+                // 載入成功
+                img.src = newImg.src;
                 img.classList.remove('loading');
                 overlay.classList.remove('show');
+                errorMsg.classList.remove('show');
+                btn.disabled = false;
+                btn.textContent = '🔄 立即刷新';
                 loadLastUpdate();
+                countdown = CHECK_INTERVAL; // 重置倒數
+                console.log('截圖刷新成功');
             };
-        }
-        
-        // 處理圖片載入錯誤
-        function handleImageError() {
-            const img = document.getElementById('screenshot');
-            img.alt = '截圖載入失敗，請稍後再試';
-            document.getElementById('loadingOverlay').classList.remove('show');
+            
+            newImg.onerror = function() {
+                // 載入失敗
+                img.classList.remove('loading');
+                overlay.classList.remove('show');
+                errorMsg.classList.add('show');
+                btn.disabled = false;
+                btn.textContent = '🔄 立即刷新';
+                countdown = CHECK_INTERVAL; // 重置倒數
+                console.log('截圖載入失敗');
+            };
+            
+            // 加入時間戳避免快取
+            newImg.src = `screenshot.png?t=${Date.now()}`;
         }
         
         // 更新倒數計時
         function updateCountdown() {
             countdown--;
             if (countdown <= 0) {
-                countdown = UPDATE_INTERVAL * 60;
+                countdown = CHECK_INTERVAL;
                 refreshScreenshot();
             }
             
-            const minutes = Math.floor(countdown / 60);
-            const seconds = countdown % 60;
-            document.getElementById('nextUpdate').textContent = 
-                `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            document.getElementById('nextCheck').textContent = `${countdown} 秒`;
         }
         
         // 初始化
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('頁面初始化...');
             loadLastUpdate();
+            
+            // 初始載入截圖
+            refreshScreenshot();
             
             // 每秒更新倒數
             setInterval(updateCountdown, 1000);
-            
-            // 每 30 秒檢查新截圖
-            setInterval(refreshScreenshot, CHECK_INTERVAL);
         });
     </script>
 </body>
